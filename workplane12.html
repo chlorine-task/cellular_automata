@@ -1,0 +1,484 @@
+<html><head><base href="." /><style>
+:root {
+  --cell-size: 8px; /* Reduced size to fit more cells */
+  --grid-color: #333;
+}
+
+body {
+  background: #111;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  font-family: monospace;
+  color: #0f0;
+}
+
+h1 {
+  margin-top: 20px;
+}
+
+.controls {
+  margin: 20px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  max-width: 800px;
+}
+
+.controls > * {
+  margin: 5px;
+}
+
+button {
+  background: #000;
+  color: #0f0;
+  border: 1px solid #0f0;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-family: monospace;
+  border-radius: 4px;
+  transition: background 0.3s, color 0.3s;
+}
+
+button:hover {
+  background: #0f0;
+  color: #000;
+}
+
+.stats {
+  margin: 20px;
+  font-size: 14px;
+}
+
+.type-selector,
+.speed-selector {
+  margin: 10px;
+  color: #0f0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+select {
+  background: #000;
+  color: #0f0;
+  border: 1px solid #0f0;
+  padding: 4px 8px;
+  font-family: monospace;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.3s, color 0.3s;
+}
+
+select:hover {
+  background: #0f0;
+  color: #000;
+}
+
+canvas {
+  border: 1px solid var(--grid-color);
+  background: #000;
+  image-rendering: pixelated;
+}
+</style></head><body>
+  <h1>Advanced Cellular Automata</h1>
+  <div class="type-selector">
+    Type: 
+    <select id="cellType">
+      <option value="0">Conway's Life</option>
+      <option value="1">HighLife (B36/S23)</option>
+      <option value="2">Day & Night (B3678/S34678)</option>
+      <option value="3">Seeds (B2/S)</option>
+      <option value="4">Life without Death (B3/S012345678)</option>
+      <option value="5">Maze (B3/S12345)</option>
+      <option value="6">2x2 (B36/S125)</option>
+      <option value="7">Replicator (B1357/S1357)</option>
+      <option value="8">Coral (B3/S45678)</option>
+      <option value="9">Anneal (B4678/S35678)</option>
+      <option value="10">Langton's Ant</option>
+    </select>
+  </div>
+  <div class="controls">
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+    <button id="clear">Clear</button>
+    <button id="random">Random</button>
+    <div class="speed-selector">
+      Speed:
+      <select id="speedSelect">
+        <option value="200">Slow</option>
+        <option value="100" selected>Normal</option>
+        <option value="50">Fast</option>
+        <option value="20">Ultra Fast</option>
+      </select>
+    </div>
+  </div>
+  <canvas id="gridCanvas" width="800" height="480"></canvas>
+  <div class="stats">
+    Generation: <span id="generation">0</span> | 
+    Population: <span id="population">0</span>
+  </div>
+
+<script>
+const cellSize = 8; // in pixels
+const width = 100;  // Number of cells horizontally
+const height = 60;  // Number of cells vertically
+let grid = [];
+let isRunning = false;
+let generation = 0;
+let animationId = null;
+let speed = 100; // Default speed in ms.yes i'm a fuck up
+
+// Langton's Ant variables
+let ant = {
+  x: Math.floor(width / 2),
+  y: Math.floor(height / 2),
+  direction: 'N' // N, E, S, W
+};
+
+const rules = {
+  0: { // Conway's Lifesddrfcvr
+    born: [3],
+    survive: [2, 3],
+    color: '#0f0'
+  },
+  1: { // HighLifess
+    born: [3, 6],
+    survive: [2, 3],
+    color: '#00f'
+  },
+  2: { // Day & Nights
+    born: [3, 6, 7, 8],
+    survive: [3, 4, 6, 7, 8],
+    color: '#ff0'
+  },
+  3: { // Seeds ....i cant explain
+    born: [2],
+    survive: [],
+    color: '#f0f'
+  },
+  4: { // Life without Death
+    born: [3],
+    survive: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    color: '#0ff'
+  },
+  5: { // Mazeeeee
+    born: [3],
+    survive: [1, 2, 3, 4, 5],
+    color: '#f00'
+  },
+  6: { // 2x2
+    born: [3, 6],
+    survive: [1, 2, 5],
+    color: '#fa0'
+  },
+  7: { // Replicatoririirr
+    born: [1, 3, 5, 7],
+    survive: [1, 3, 5, 7],
+    color: '#a0f'
+  },
+  8: { // Coraling
+    born: [3],
+    survive: [4, 5, 6, 7, 8],
+    color: '#af0'
+  },
+  9: { // Annealsl
+    born: [4, 6, 7, 8],
+    survive: [3, 5, 6, 7, 8],
+    color: '#f80'
+  },
+  10: { // Langton's Ant
+    color: '#ff69b4'
+    // Langton's Ant rules are handled separately for some reason
+  }
+};
+
+const canvas = document.getElementById('gridCanvas');
+const ctx = canvas.getContext('2d');
+const cellTypeSelect = document.getElementById('cellType');
+const generationSpan = document.getElementById('generation');
+const populationSpan = document.getElementById('population');
+const speedSelect = document.getElementById('speedSelect');
+
+// Initialize grid shit
+function initGrid() {
+  grid = [];
+  for (let y = 0; y < height; y++) {
+    const row = [];
+    for (let x = 0; x < width; x++) {
+      row.push(false);
+    }
+    grid.push(row);
+  }
+  // Initialize  the. Langton Ant
+  ant.x = Math.floor(width / 2);
+  ant.y = Math.floor(height / 2);
+  ant.direction = 'N';
+}
+
+// Draw grid canvas function thingy
+function drawGrid() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const currentType = cellTypeSelect.value;
+  const color = rules[currentType].color;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (grid[y][x]) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      }
+    }
+  }
+  
+  if (currentType == 10) {
+    // Draw the ant
+    ctx.fillStyle = '#ff69b4';
+    ctx.beginPath();
+    const antSize = cellSize;
+    const centerX = ant.x * cellSize;
+    const centerY = ant.y * cellSize;
+    ctx.moveTo(centerX + antSize / 2, centerY);
+    if (ant.direction === 'N') {
+      ctx.lineTo(centerX + antSize, centerY + antSize);
+      ctx.lineTo(centerX, centerY + antSize);
+    } else if (ant.direction === 'E') {
+      ctx.lineTo(centerX, centerY + antSize);
+      ctx.lineTo(centerX, centerY);
+    } else if (ant.direction === 'S') {
+      ctx.lineTo(centerX, centerY);
+      ctx.lineTo(centerX + antSize, centerY);
+    } else if (ant.direction === 'W') {
+      ctx.lineTo(centerX + antSize, centerY);
+      ctx.lineTo(centerX + antSize, centerY + antSize);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Draw grid lines...I'm done making remarks in the code, It costs too much
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.beginPath();
+  for (let x = 0; x <= width; x++) {
+    ctx.moveTo(x * cellSize, 0);
+    ctx.lineTo(x * cellSize, height * cellSize);
+  }
+  for (let y = 0; y <= height; y++) {
+    ctx.moveTo(0, y * cellSize);
+    ctx.lineTo(width * cellSize, y * cellSize);
+  }
+  ctx.stroke();
+}
+
+// Toggle cell state
+function toggleCell(x, y) {
+  grid[y][x] = !grid[y][x];
+  drawGrid();
+  updateStats();
+}
+
+// Handle canvas click
+canvas.addEventListener('click', (event) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = Math.floor((event.clientX - rect.left) * scaleX / cellSize);
+  const y = Math.floor((event.clientY - rect.top) * scaleY / cellSize);
+  if (x >= 0 && x < width && y >= 0 && y < height) {
+    toggleCell(x, y);
+  }
+});
+
+// Count neighbors
+function countNeighbors(x, y) {
+  let count = 0;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = (x + dx + width) % width;
+      const ny = (y + dy + height) % height;
+      if (grid[ny][nx]) count++;
+    }
+  }
+  return count;
+}
+
+let lastStepTime = 0;
+
+// Step function
+function step(timestamp) {
+  if (!lastStepTime) lastStepTime = timestamp;
+  const elapsed = timestamp - lastStepTime;
+
+  if (elapsed >= speed) {
+    lastStepTime = timestamp;
+    const currentType = cellTypeSelect.value;
+
+    if (currentType == 10) {
+      // Langton's Ant rules
+      if (grid[ant.y][ant.x]) {
+        // Cell is black: turn left
+        ant.direction = turnLeft(ant.direction);
+        grid[ant.y][ant.x] = false;
+      } else {
+        // Cell is white: turn right
+        ant.direction = turnRight(ant.direction);
+        grid[ant.y][ant.x] = true;
+      }
+
+      // Move forward
+      moveAnt();
+
+      generation++;
+      updateStats();
+      drawGrid();
+    } else {
+      // Cellular Automata rules
+      const newGrid = grid.map(row => [...row]);
+      const currentRules = rules[currentType];
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const neighbors = countNeighbors(x, y);
+          const isAlive = grid[y][x];
+
+          if (isAlive) {
+            newGrid[y][x] = currentRules.survive.includes(neighbors);
+          } else {
+            newGrid[y][x] = currentRules.born.includes(neighbors);
+          }
+        }
+      }
+
+      grid = newGrid;
+      generation++;
+      updateStats();
+      drawGrid();
+    }
+  }
+
+  if (isRunning) {
+    animationId = requestAnimationFrame(step);
+  }
+}
+
+// Turn ant left
+function turnLeft(direction) {
+  const dirs = ['N', 'W', 'S', 'E'];
+  let idx = dirs.indexOf(direction);
+  idx = (idx + 1) % dirs.length;
+  return dirs[idx];
+}
+
+// Turn ant right
+function turnRight(direction) {
+  const dirs = ['N', 'E', 'S', 'W'];
+  let idx = dirs.indexOf(direction);
+  idx = (idx + 1) % dirs.length;
+  return dirs[idx];
+}
+
+// Move ant forward
+function moveAnt() {
+  switch (ant.direction) {
+    case 'N':
+      ant.y = (ant.y - 1 + height) % height;
+      break;
+    case 'E':
+      ant.x = (ant.x + 1) % width;
+      break;
+    case 'S':
+      ant.y = (ant.y + 1) % height;
+      break;
+    case 'W':
+      ant.x = (ant.x - 1 + width) % width;
+      break;
+  }
+}
+
+// Start simulation
+function start() {
+  if (!isRunning) {
+    isRunning = true;
+    animationId = requestAnimationFrame(step);
+  }
+}
+
+// Stop simulation
+function stop() {
+  isRunning = false;
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+  lastStepTime = 0;
+}
+
+// Randomize grid
+function randomize() {
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      grid[y][x] = Math.random() < 0.3;
+    }
+  }
+  generation = 0;
+  updateStats();
+  drawGrid();
+}
+
+// Clear grid
+function clearGrid() {
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      grid[y][x] = false;
+    }
+  }
+  generation = 0;
+  updateStats();
+  drawGrid();
+}
+
+// Update statistics
+function updateStats() {
+  generationSpan.textContent = generation;
+  let population = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (grid[y][x]) population++;
+    }
+  }
+  // If Langton's Ant is active, include the ant in the population count
+  if (cellTypeSelect.value == 10) {
+    population = 1; // Only the ant is considered as population
+  }
+  populationSpan.textContent = population;
+}
+
+// Event listeners
+document.getElementById('start').addEventListener('click', start);
+document.getElementById('stop').addEventListener('click', stop);
+document.getElementById('clear').addEventListener('click', clearGrid);
+document.getElementById('random').addEventListener('click', randomize);
+cellTypeSelect.addEventListener('change', () => {
+  if (cellTypeSelect.value == 10) {
+    // Initialize Langton's Ant
+    initGrid();
+  }
+  drawGrid();
+  updateStats();
+});
+speedSelect.addEventListener('change', (event) => {
+  speed = parseInt(event.target.value, 10);
+});
+
+// Initialize
+    //Anyways, enjoy, save this for yourself,do whatever.
+initGrid();
+drawGrid();
+updateStats();
+</script>
+</body></html>
